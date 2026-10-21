@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MedKeep</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Alpine.js CDN -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #f8fafc; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen text-sm" x-data="medicalApp()" x-init="init()">
+
+  <!-- 顶部导航栏 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="font-bold text-slate-900 text-base tracking-tight">MedKeep</span>
+        <span class="text-xs text-slate-400 border-l border-slate-200 pl-3 hidden sm:inline">家庭病历档案</span>
+      </div>
+
+      <!-- 成员选择与管理 (动态渲染) -->
+      <div class="flex items-center space-x-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg text-xs">
+          <template x-for="(info, id) in summary" :key="id">
+            <button 
+              @click="switchPerson(id)"
+              :class="currentPerson === id ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-500 hover:text-slate-900'"
+              class="px-3 py-1 rounded-md transition-all flex items-center space-x-1.5">
+              <span x-text="info.name || id"></span>
+              <span class="text-[10px] text-slate-400 font-mono" x-text="`(${info.count || 0})`"></span>
+            </button>
+          </template>
+        </div>
+
+        <button 
+          @click="openMemberModal()" 
+          title="修改成员名称 / 管理家庭成员"
+          class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors text-xs flex items-center space-x-1">
+          <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+          <span class="hidden sm:inline">编辑成员</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 工具筛选条 -->
+  <div class="bg-white border-b border-slate-200 py-2.5">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-xs">
+      
+      <!-- 视图模式切换 -->
+      <div class="flex bg-slate-100 p-0.5 rounded-lg space-x-0.5">
+        <button 
+          @click="viewMode = 'conditions'" 
+          :class="viewMode === 'conditions' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          class="px-3 py-1.5 rounded-md transition-all flex items-center space-x-1">
+          <span>按疾病分类</span>
+          <span class="font-mono text-slate-400" x-text="`(${conditions.length})`"></span>
+        </button>
+        <button 
+          @click="viewMode = 'episodes'" 
+          :class="viewMode === 'episodes' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          class="px-3 py-1.5 rounded-md transition-all flex items-center space-x-1">
+          <span>就诊事件流</span>
+          <span class="font-mono text-slate-400" x-text="`(${episodes.length})`"></span>
+        </button>
+        <button 
+          @click="viewMode = 'records'" 
+          :class="viewMode === 'records' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          class="px-3 py-1.5 rounded-md transition-all flex items-center space-x-1">
+          <span>全部单据</span>
+          <span class="font-mono text-slate-400" x-text="`(${records.length})`"></span>
+        </button>
+      </div>
+
+      <!-- 搜索框与展开操作 -->
+      <div class="flex items-center space-x-2 flex-1 max-w-md ml-auto">
+        <div class="relative w-full">
+          <input 
+            type="text" 
+            x-model="searchQuery" 
+            placeholder="搜索诊断、药品、指标、医院、医生..." 
+            class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 focus:bg-white transition-all">
+          <button 
+            x-show="searchQuery" 
+            @click="searchQuery = ''" 
+            class="absolute right-2.5 top-1.5 text-slate-400 hover:text-slate-600 text-xs font-mono">清除</button>
+        </div>
+        <button 
+          @click="toggleAllCards()" 
+          class="shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-all font-medium text-xs"
+          x-text="allExpanded ? '全部收起' : '全部展开'">
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 主体内容 -->
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-5">
+
+    <!-- 加载中 -->
+    <div x-show="loading" class="py-16 text-center text-slate-400 text-xs font-mono">
+      加载数据中...
+    </div>
+
+    <!-- ================= 视图 1：按专科/疾病分类收拢 (默认) ================= -->
+    <div x-show="!loading && viewMode === 'conditions'" class="space-y-3">
+      <template x-for="cond in filteredConditions" :key="cond.condition_id">
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-slate-300 transition-colors">
+          
+          <!-- 卡片头部 (全部收起状态) -->
+          <div 
+            @click="toggleCondition(cond.condition_id)"
+            class="p-4 flex items-start justify-between cursor-pointer hover:bg-slate-50/70 transition-colors">
+            
+            <div class="space-y-1.5 flex-1 pr-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-bold text-slate-900 text-base" x-text="cond.title"></span>
+                <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200" x-text="cond.status"></span>
+                <span class="text-xs text-slate-400 font-mono" x-text="`最新: ${cond.latest_date}`"></span>
+                <span class="text-xs text-slate-400 font-mono" x-text="`(${cond.total_episodes} 次就诊 · ${cond.total_records} 份单据)`"></span>
+              </div>
+              
+              <p class="text-xs text-slate-600 leading-relaxed" x-text="cond.summary"></p>
+              
+              <div class="text-[11px] text-slate-400 font-mono">
+                时间跨度: <span class="text-slate-600" x-text="cond.date_span"></span>
+              </div>
+            </div>
+
+            <div class="shrink-0 pt-1 text-slate-400 text-xs font-mono select-none" x-text="isConditionExpanded(cond.condition_id) ? '收起 ↑' : '展开 ↓'"></div>
+          </div>
+
+          <!-- 展开区：该疾病大类下的历次就诊记录 -->
+          <div x-show="isConditionExpanded(cond.condition_id)" x-collapse class="border-t border-slate-100 bg-slate-50/50 p-4 space-y-3">
+            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+              就诊记录 (时间倒序)
+            </div>
+
+            <template x-for="ep in cond.episodes" :key="ep.episode_id">
+              <div class="bg-white rounded-lg p-3.5 border border-slate-200 text-xs space-y-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                  <div class="flex items-center space-x-2">
+                    <span class="font-mono font-bold text-slate-900" x-text="ep.date_range"></span>
+                    <span class="font-semibold text-slate-800" x-text="ep.title"></span>
+                    <span x-show="ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-100 font-medium">门诊主条目</span>
+                    <span x-show="!ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-semibold">无病历</span>
+                    <span x-show="ep.missing_items?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-medium" x-text="`缺 ${ep.missing_items.length} 份单据`"></span>
+                  </div>
+                  <div class="text-slate-400 font-mono text-[11px]" x-text="`${ep.hospital} · ${ep.department} · ${ep.doctor}`"></div>
+                </div>
+
+                <!-- 诊疗纪要 -->
+                <div class="text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 leading-relaxed">
+                  <span class="font-semibold text-slate-700">诊疗纪要：</span>
+                  <span x-text="ep.summary"></span>
+                </div>
+
+                <!-- 无病历提示 (若本次无门诊病历底纸) -->
+                <div x-show="!ep.has_formal_visit" class="bg-amber-50/70 p-2.5 rounded border border-amber-200/80 text-xs space-y-1">
+                  <div class="flex items-center space-x-1.5 font-semibold text-amber-900">
+                    <span class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-bold">无病历</span>
+                    <span>未见门诊处方病历原件</span>
+                  </div>
+                  <p class="text-amber-800/90 leading-relaxed text-[11px]">
+                    本次事件无纸质或电子门诊病历底纸，系统根据附随的检查、化验或处方单据推断诊疗分类归档。
+                  </p>
+                </div>
+
+                <!-- 处方与医嘱 -->
+                <div x-show="ep.primary_visit?.treatment_and_plan" class="space-y-1">
+                  <div class="font-semibold text-slate-700">处方与医嘱：</div>
+                  <div class="text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(ep.primary_visit?.treatment_and_plan)"></div>
+                </div>
+
+                <!-- 关联检查检验发现 -->
+                <div x-show="ep.attached_items?.length > 0" class="space-y-1.5 pt-1">
+                  <div class="font-semibold text-slate-700">附随检查检验：</div>
+                  <template x-for="item in ep.attached_items" :key="item.record_id">
+                    <div class="bg-slate-50 p-2 rounded border border-slate-100 space-y-1">
+                      <div class="flex items-center justify-between">
+                        <span class="font-semibold text-slate-800" x-text="item.document_title"></span>
+                        <span class="font-mono text-[10px] text-slate-400" x-text="`[${item.date}]`"></span>
+                      </div>
+                      <div x-show="item.findings_and_metrics && item.findings_and_metrics !== '无。'" class="font-mono text-slate-600 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(item.findings_and_metrics)"></div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- 缺失单据排查 -->
+                <div x-show="ep.missing_items?.length > 0" class="space-y-1.5 pt-1">
+                  <div class="font-semibold text-rose-700 flex items-center justify-between">
+                    <span>临床单据缺失排查：</span>
+                    <span class="font-mono text-[10px] text-rose-500" x-text="`待补充 ${ep.missing_items.length} 份`"></span>
+                  </div>
+                  <template x-for="item in ep.missing_items" :key="item.title">
+                    <div class="bg-rose-50/50 p-2.5 rounded border border-dashed border-rose-300 space-y-1">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-1.5">
+                          <span class="px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-700 font-medium" x-text="item.type_label"></span>
+                          <span class="font-semibold text-rose-900" x-text="item.title"></span>
+                        </div>
+                        <span class="font-mono text-rose-500 text-[10px]">单据缺失</span>
+                      </div>
+                      <div class="text-[11px] text-slate-600 leading-relaxed" x-text="item.reason"></div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- 单据原件链接 -->
+                <div class="pt-1.5 flex flex-wrap items-center gap-2 border-t border-slate-100 text-[11px]">
+                  <span class="text-slate-400">单据原件:</span>
+                  <template x-for="f in ep.all_nas_files" :key="f">
+                    <a 
+                      :href="getNasRawUrl(f)" 
+                      target="_blank" 
+                      class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded font-mono text-slate-700 transition-colors">
+                      <span x-text="f.split('/').pop()"></span>
+                      <span class="text-blue-600 ml-0.5">查看</span>
+                    </a>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+
+        </div>
+      </template>
+    </div>
+
+    <!-- ================= 视图 2：就诊事件流 (Episodes 视图) ================= -->
+    <div x-show="!loading && viewMode === 'episodes'" class="space-y-3">
+      <template x-for="ep in filteredEpisodes" :key="ep.episode_id">
+        <div class="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-slate-300 transition-colors">
+          
+          <!-- 事件头部 (全部收起状态) -->
+          <div 
+            @click="toggleCard(ep.episode_id)"
+            class="p-4 flex items-start justify-between cursor-pointer hover:bg-slate-50/70 transition-colors">
+            
+            <div class="space-y-1.5 flex-1 pr-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-mono font-bold text-slate-900 text-xs" x-text="ep.date_range"></span>
+                <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200" x-text="ep.department"></span>
+                <span class="font-bold text-slate-900 text-sm" x-text="ep.title"></span>
+                
+                <span x-show="ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-100 font-medium">门诊主条目</span>
+                <span x-show="!ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-semibold">无病历</span>
+                <span x-show="ep.attached_items?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 font-medium" x-text="`关联 ${ep.attached_items.length} 份报告`"></span>
+                <span x-show="ep.missing_items?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-medium" x-text="`缺 ${ep.missing_items.length} 份单据`"></span>
+                <span x-show="ep.promoted_observations?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-medium" x-text="`附自查 ${ep.promoted_observations.length} 条`"></span>
+              </div>
+
+              <div class="text-xs text-slate-500" x-text="`${ep.hospital} · 医生: ${ep.doctor} · 诊断: ${cleanDiagnosis(ep.diagnosis)}`"></div>
+            </div>
+
+            <div class="shrink-0 pt-1 text-slate-400 text-xs font-mono select-none" x-text="isExpanded(ep.episode_id) ? '收起 ↑' : '展开 ↓'"></div>
+          </div>
+
+          <!-- 展开区：该就诊事件详细报告与附随单据 -->
+          <div x-show="isExpanded(ep.episode_id)" x-collapse class="border-t border-slate-100 bg-slate-50/50 p-4 space-y-4 text-xs">
+            
+            <!-- 诊疗纪要 -->
+            <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 leading-relaxed text-slate-700">
+              <span class="font-semibold text-slate-800">诊疗纪要：</span>
+              <span x-text="ep.summary"></span>
+            </div>
+
+            <!-- 无病历提示 (若本次无门诊病历底纸) -->
+            <div x-show="!ep.has_formal_visit" class="bg-amber-50/70 p-3 rounded-lg border border-amber-200/80 space-y-1">
+              <div class="flex items-center space-x-1.5 font-semibold text-amber-900">
+                <span class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 border border-amber-300 font-bold">无病历</span>
+                <span>未见门诊处方病历原件</span>
+              </div>
+              <p class="text-amber-800/90 leading-relaxed text-[11px]">
+                本次就诊无纸质或电子门诊病历底纸，系统根据附随的检查、化验或处方单据推断诊疗分类归档。
+              </p>
+            </div>
+
+            <!-- 主病历详细记录 -->
+            <template x-if="ep.primary_visit">
+              <div class="bg-white rounded-lg p-3.5 border border-slate-200 space-y-2.5">
+                <div class="font-bold text-slate-900 border-b border-slate-100 pb-1.5">
+                  门诊病历记录 (<span x-text="ep.primary_visit.document_title"></span>)
+                </div>
+
+                <div x-show="ep.primary_visit.chief_complaint_and_history" class="space-y-1">
+                  <div class="font-semibold text-slate-700">主诉与现病史：</div>
+                  <div class="text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 whitespace-pre-wrap leading-relaxed" x-text="ep.primary_visit.chief_complaint_and_history"></div>
+                </div>
+
+                <div x-show="ep.primary_visit.treatment_and_plan" class="space-y-1">
+                  <div class="font-semibold text-slate-700">处方方案与医嘱：</div>
+                  <div class="text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(ep.primary_visit.treatment_and_plan)"></div>
+                </div>
+              </div>
+            </template>
+
+            <!-- 挂接的关联检查、检验、处方报告 -->
+            <div x-show="ep.attached_items?.length > 0" class="space-y-2.5">
+              <div class="font-bold text-slate-900 text-xs flex items-center justify-between">
+                <span>关联检查与化验单据（共 <span class="font-mono text-slate-700" x-text="ep.attached_items.length"></span> 份）：</span>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2.5">
+                <template x-for="item in ep.attached_items" :key="item.record_id">
+                  <div class="bg-white rounded-lg p-3 border border-slate-200 space-y-2">
+                    <div class="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                      <div class="flex items-center space-x-2">
+                        <span class="font-mono text-slate-400" x-text="`#${item.record_id}`"></span>
+                        <span :class="getTypeBadge(item.category).tagClass" class="px-1.5 py-0.2 rounded text-[10px]" x-text="getTypeBadge(item.category).label"></span>
+                        <span class="font-semibold text-slate-900" x-text="item.document_title"></span>
+                      </div>
+                      <span class="text-slate-400 font-mono text-[11px]" x-text="item.date"></span>
+                    </div>
+
+                    <div x-show="item.findings_and_metrics && item.findings_and_metrics !== '无。'" class="space-y-1">
+                      <div class="text-slate-500 font-medium">指标与检查发现：</div>
+                      <div class="bg-slate-50 p-2 rounded border border-slate-100 font-mono text-slate-700 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(item.findings_and_metrics)"></div>
+                    </div>
+
+                    <div x-show="item.treatment_and_plan && item.treatment_and_plan !== '无。'" class="space-y-1">
+                      <div class="text-slate-500 font-medium">处方与医嘱：</div>
+                      <div class="bg-slate-50 p-2 rounded border border-slate-100 text-slate-700 leading-relaxed" x-html="formatMarkdown(item.treatment_and_plan)"></div>
+                    </div>
+
+                    <div class="pt-1 flex justify-end">
+                      <template x-for="f in item.nas_files" :key="f">
+                        <a 
+                          :href="getNasRawUrl(f)" 
+                          target="_blank" 
+                          class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded font-mono text-slate-600 transition-colors text-[11px]">
+                          <span x-text="f.split('/').pop()"></span>
+                          <span class="text-blue-600 ml-0.5">查看</span>
+                        </a>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- 缺失单据排查 -->
+            <div x-show="ep.missing_items?.length > 0" class="space-y-2">
+              <div class="font-bold text-rose-800 text-xs flex items-center justify-between">
+                <span>临床单据缺失排查（共 <span class="font-mono text-rose-600" x-text="ep.missing_items.length"></span> 份待补充）：</span>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2">
+                <template x-for="item in ep.missing_items" :key="item.title">
+                  <div class="bg-rose-50/40 rounded-lg p-2.5 border border-dashed border-rose-300 space-y-1 text-xs">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center space-x-2">
+                        <span class="px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-700 font-medium" x-text="item.type_label"></span>
+                        <span class="font-semibold text-slate-900" x-text="item.title"></span>
+                      </div>
+                      <span class="font-mono text-rose-500 text-[10px]">单据缺失</span>
+                    </div>
+                    <div class="text-slate-600 leading-relaxed text-[11px]" x-text="item.reason"></div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- 患者自查与现象分析 (若有打标引用) -->
+            <div x-show="ep.promoted_observations?.length > 0" class="space-y-2">
+              <div class="font-bold text-slate-800 text-xs">
+                患者就诊前自查与现象记录（共 <span class="font-mono text-slate-700" x-text="ep.promoted_observations?.length"></span> 条，已手动确认引用）：
+              </div>
+
+              <div class="grid grid-cols-1 gap-2">
+                <template x-for="obs in ep.promoted_observations" :key="obs.obs_id">
+                  <div class="bg-amber-50/50 rounded-lg p-3 border border-amber-200 text-xs space-y-1">
+                    <div class="flex items-center justify-between pb-1 border-b border-amber-100">
+                      <span class="font-semibold text-slate-900" x-text="obs.title"></span>
+                      <span class="font-mono text-slate-500 text-[10px]" x-text="obs.datetime || obs.date"></span>
+                    </div>
+                    <div class="text-slate-700 leading-relaxed">
+                      <span class="font-medium text-slate-800">现象自述：</span><span x-text="obs.phenomenon"></span>
+                    </div>
+                    <div x-show="obs.self_analysis" class="text-slate-600 leading-relaxed">
+                      <span class="font-medium text-slate-800">推测分析：</span><span class="italic" x-text="obs.self_analysis"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- 单据原件汇总一览 -->
+            <div class="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-2 text-[11px]">
+              <span class="text-slate-400">本次就诊全部原件:</span>
+              <template x-for="file in ep.all_nas_files" :key="file">
+                <a 
+                  :href="getNasRawUrl(file)" 
+                  target="_blank" 
+                  class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded font-mono text-slate-600 transition-colors">
+                  <span x-text="file.split('/').pop()"></span>
+                  <span class="text-blue-600 ml-0.5">查看</span>
+                </a>
+              </template>
+            </div>
+
+          </div>
+
+        </div>
+      </template>
+    </div>
+
+    <!-- ================= 视图 3：全部单据明细表 ================= -->
+    <div x-show="!loading && viewMode === 'records'" class="space-y-3">
+      <template x-for="record in filteredRecords" :key="record.record_id">
+        <div class="bg-white border border-slate-200 rounded-xl p-3.5 hover:border-slate-300 transition-colors text-xs space-y-2">
+          <div class="flex items-start justify-between">
+            <div class="space-y-1">
+              <div class="flex items-center space-x-2">
+                <span class="font-mono font-bold text-slate-900" x-text="record.date"></span>
+                <span :class="getTypeBadge(record.category).tagClass" class="px-1.5 py-0.2 rounded text-[10px] font-medium" x-text="getTypeBadge(record.category).label"></span>
+                <span class="font-mono text-slate-400" x-text="`#${record.record_id}`"></span>
+              </div>
+              <div class="font-semibold text-slate-900 text-sm" x-text="cleanDiagnosis(record.diagnosis) || record.document_title"></div>
+              <div class="text-slate-500 font-mono text-[11px]" x-text="`${record.hospital_dept_doctor} · ${record.document_title}`"></div>
+            </div>
+
+            <div class="shrink-0 flex items-center space-x-1">
+              <template x-for="f in record.nas_files" :key="f">
+                <a :href="getNasRawUrl(f)" target="_blank" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded font-mono text-slate-700 text-xs transition-colors">
+                  查看原件
+                </a>
+              </template>
+            </div>
+          </div>
+
+          <div x-show="record.findings_and_metrics && record.findings_and_metrics !== '无。'" class="bg-slate-50 p-2 rounded border border-slate-100 font-mono text-slate-700 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(record.findings_and_metrics)"></div>
+          <div x-show="record.treatment_and_plan && record.treatment_and_plan !== '无。'" class="bg-slate-50 p-2 rounded border border-slate-100 text-slate-700 leading-relaxed" x-html="formatMarkdown(record.treatment_and_plan)"></div>
+        </div>
+      </template>
+    </div>
+
+  </main>
+
+  <!-- 成员管理弹窗 Modal -->
+  <div x-show="showMemberModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto">
+    <!-- 遮罩层 -->
+    <div @click="closeMemberModal()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"></div>
+
+    <div class="flex min-h-full items-center justify-center p-4">
+      <div 
+        @click.stop 
+        class="relative w-full max-w-md bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs">
+        
+        <!-- 弹窗标题栏 -->
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <div>
+            <h3 class="font-bold text-slate-900 text-sm">家庭成员设置</h3>
+            <p class="text-[11px] text-slate-400 mt-0.5">修改成员姓名，变更直接保存至本地 config/medkeep.json</p>
+          </div>
+          <button @click="closeMemberModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-md transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- 弹窗主体内容 -->
+        <div class="p-5 space-y-4">
+          <!-- 现有成员列表 -->
+          <div class="space-y-2.5">
+            <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">当前成员</div>
+            <template x-for="(m, idx) in memberEditList" :key="m.id">
+              <div class="flex items-center space-x-2.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                <span class="px-2 py-1 bg-white border border-slate-200 rounded font-mono text-[11px] text-slate-600 shrink-0 font-medium" x-text="m.id"></span>
+                <div class="flex-1">
+                  <input 
+                    type="text" 
+                    x-model="m.name" 
+                    placeholder="输入显示姓名" 
+                    class="w-full px-2.5 py-1 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400">
+                </div>
+                <span class="text-[11px] text-slate-400 font-mono shrink-0" x-text="`${summary[m.id]?.count || 0} 份`"></span>
+              </div>
+            </template>
+          </div>
+
+          <!-- 添加新成员 -->
+          <div class="border-t border-slate-100 pt-3 space-y-2">
+            <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">添加新成员</div>
+            <div class="flex items-center space-x-2">
+              <input 
+                type="text" 
+                x-model="newMember.id" 
+                placeholder="ID (如: grandpa)" 
+                class="w-1/3 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-400">
+              <input 
+                type="text" 
+                x-model="newMember.name" 
+                placeholder="姓名 (如: 爷爷)" 
+                class="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-400">
+              <button 
+                @click="addNewMember()" 
+                :disabled="!newMember.id.trim() || !newMember.name.trim()"
+                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 font-medium rounded-lg transition-colors text-xs shrink-0">
+                添加
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-400">添加后将自动创建 records/{id}/ 目录与数据文件。</p>
+          </div>
+
+          <!-- 提示消息 -->
+          <div x-show="memberModalMsg" class="p-2 rounded bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs text-center" x-text="memberModalMsg"></div>
+          <div x-show="memberModalError" class="p-2 rounded bg-rose-50 border border-rose-100 text-rose-700 text-xs text-center" x-text="memberModalError"></div>
+        </div>
+
+        <!-- 弹窗底部操作栏 -->
+        <div class="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end space-x-2">
+          <button 
+            @click="closeMemberModal()" 
+            class="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg transition-colors text-xs">
+            取消
+          </button>
+          <button 
+            @click="saveMembers()" 
+            :disabled="savingMembers"
+            class="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-medium rounded-lg transition-colors text-xs flex items-center space-x-1">
+            <span x-text="savingMembers ? '保存中...' : '保存更改'"></span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function medicalApp() {
+      return {
+        currentPerson: '',
+        viewMode: 'conditions',
+        conditions: [],
+        episodes: [],
+        records: [],
+        summary: {},
+        searchQuery: '',
+        expandedConditions: {},
+        expandedCards: {},
+        allExpanded: false,
+        loading: false,
+        nasBaseUrl: '',
+
+        showMemberModal: false,
+        savingMembers: false,
+        memberModalMsg: '',
+        memberModalError: '',
+        memberEditList: [],
+        newMember: { id: '', name: '' },
+
+        async init() {
+          await this.loadSummary();
+          const memberKeys = Object.keys(this.summary);
+          if (!this.currentPerson || !memberKeys.includes(this.currentPerson)) {
+            this.currentPerson = memberKeys.length > 0 ? memberKeys[0] : 'demo';
+          }
+          await this.loadData();
+        },
+
+        openMemberModal() {
+          this.memberModalMsg = '';
+          this.memberModalError = '';
+          this.newMember = { id: '', name: '' };
+          this.memberEditList = Object.entries(this.summary).map(([id, info]) => ({
+            id: id,
+            name: info.name || id,
+            conditions: info.conditions || []
+          }));
+          this.showMemberModal = true;
+        },
+
+        closeMemberModal() {
+          this.showMemberModal = false;
+        },
+
+        async addNewMember() {
+          const id = this.newMember.id.trim().toLowerCase();
+          const name = this.newMember.name.trim();
+          if (!id || !name) return;
+          if (this.memberEditList.some(m => m.id === id)) {
+            this.memberModalError = `成员 ID '${id}' 已存在`;
+            return;
+          }
+          this.savingMembers = true;
+          this.memberModalError = '';
+          try {
+            const res = await fetch('/api/members/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'add', id, name })
+            });
+            const data = await res.json();
+            if (data.success) {
+              this.memberModalMsg = `已成功添加成员 ${name} (${id})`;
+              this.newMember = { id: '', name: '' };
+              await this.loadSummary();
+              this.memberEditList = Object.entries(this.summary).map(([i, info]) => ({
+                id: i,
+                name: info.name || i,
+                conditions: info.conditions || []
+              }));
+              setTimeout(() => { this.memberModalMsg = ''; }, 2000);
+            } else {
+              this.memberModalError = data.error || '添加失败';
+            }
+          } catch (e) {
+            this.memberModalError = '请求失败: ' + e.message;
+          } finally {
+            this.savingMembers = false;
+          }
+        },
+
+        async saveMembers() {
+          this.savingMembers = true;
+          this.memberModalMsg = '';
+          this.memberModalError = '';
+          try {
+            const res = await fetch('/api/members/update', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ members: this.memberEditList })
+            });
+            const data = await res.json();
+            if (data.success) {
+              this.memberModalMsg = '保存成功！';
+              await this.loadSummary();
+              setTimeout(() => {
+                this.closeMemberModal();
+                this.memberModalMsg = '';
+              }, 500);
+            } else {
+              this.memberModalError = data.error || '保存失败';
+            }
+          } catch (e) {
+            this.memberModalError = '保存失败: ' + e.message;
+          } finally {
+            this.savingMembers = false;
+          }
+        },
+
+        async loadSummary() {
+          try {
+            const res = await fetch('/api/summary');
+            this.summary = await res.json();
+          } catch (e) {
+            console.error('加载摘要失败:', e);
+          }
+        },
+
+        async loadData() {
+          this.loading = true;
+          try {
+            const [condRes, epRes, recRes] = await Promise.all([
+              fetch(`/api/conditions?person=${this.currentPerson}`),
+              fetch(`/api/episodes?person=${this.currentPerson}`),
+              fetch(`/api/records?person=${this.currentPerson}`)
+            ]);
+            this.conditions = await condRes.json();
+            this.episodes = await epRes.json();
+            this.records = await recRes.json();
+            
+            // 默认全部收起
+            this.expandedConditions = {};
+            this.expandedCards = {};
+            this.allExpanded = false;
+          } catch (e) {
+            console.error('加载数据失败:', e);
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        switchPerson(person) {
+          if (this.currentPerson === person) return;
+          this.currentPerson = person;
+          this.searchQuery = '';
+          this.loadData();
+        },
+
+        get filteredConditions() {
+          if (!this.searchQuery.trim()) return this.conditions;
+          const q = this.searchQuery.toLowerCase().trim();
+          return this.conditions.filter(c => {
+            const fullText = [
+              c.title,
+              c.short_name,
+              c.status,
+              c.latest_date,
+              c.date_span,
+              c.summary,
+              JSON.stringify(c.episodes || [])
+            ].join(' ').toLowerCase();
+            return fullText.includes(q);
+          });
+        },
+
+        get filteredEpisodes() {
+          if (!this.searchQuery.trim()) return this.episodes;
+          const q = this.searchQuery.toLowerCase().trim();
+          return this.episodes.filter(ep => {
+            const fullText = [
+              ep.date_range,
+              ep.title,
+              ep.hospital,
+              ep.department,
+              ep.doctor,
+              ep.diagnosis,
+              ep.summary,
+              JSON.stringify(ep.primary_visit || {}),
+              JSON.stringify(ep.attached_items || [])
+            ].join(' ').toLowerCase();
+            return fullText.includes(q);
+          });
+        },
+
+        get filteredRecords() {
+          if (!this.searchQuery.trim()) return this.records;
+          const q = this.searchQuery.toLowerCase().trim();
+          return this.records.filter(r => {
+            const fullText = [
+              r.date,
+              r.document_title,
+              r.hospital_dept_doctor,
+              r.diagnosis,
+              r.findings_and_metrics,
+              r.treatment_and_plan
+            ].join(' ').toLowerCase();
+            return fullText.includes(q);
+          });
+        },
+
+        toggleCondition(id) {
+          this.expandedConditions[id] = !this.expandedConditions[id];
+        },
+
+        isConditionExpanded(id) {
+          return !!this.expandedConditions[id];
+        },
+
+        toggleCard(id) {
+          this.expandedCards[id] = !this.expandedCards[id];
+        },
+
+        isExpanded(id) {
+          return !!this.expandedCards[id];
+        },
+
+        toggleAllCards() {
+          this.allExpanded = !this.allExpanded;
+          this.conditions.forEach(c => {
+            this.expandedConditions[c.condition_id] = this.allExpanded;
+          });
+          this.episodes.forEach(ep => {
+            this.expandedCards[ep.episode_id] = this.allExpanded;
+          });
+        },
+
+        cleanDiagnosis(diag) {
+          if (!diag) return '';
+          return diag.replace(/[-*`]/g, '').trim().split('\n')[0];
+        },
+
+        getTypeBadge(category) {
+          const map = {
+            visit: { label: '门诊', tagClass: 'bg-blue-50 text-blue-700 border border-blue-100' },
+            exam: { label: '检查', tagClass: 'bg-emerald-50 text-emerald-700 border border-emerald-100' },
+            lab: { label: '化验', tagClass: 'bg-amber-50 text-amber-700 border border-amber-100' },
+            rx: { label: '处方', tagClass: 'bg-purple-50 text-purple-700 border border-purple-100' },
+            tcm: { label: '中药', tagClass: 'bg-stone-50 text-stone-700 border border-stone-200' },
+            imaging: { label: '影像', tagClass: 'bg-cyan-50 text-cyan-700 border border-cyan-100' },
+            discharge: { label: '出院', tagClass: 'bg-rose-50 text-rose-700 border border-rose-100' },
+            checkup: { label: '体检', tagClass: 'bg-slate-100 text-slate-700 border border-slate-200' }
+          };
+          return map[category] || { label: '单据', tagClass: 'bg-slate-100 text-slate-700 border border-slate-200' };
+        },
+
+        getNasRawUrl(filePath) {
+          if (!filePath) return '#';
+          if (this.nasBaseUrl) {
+            return `${this.nasBaseUrl}/raw${filePath}`;
+          }
+          return filePath;
+        },
+
+        formatMarkdown(text) {
+          if (!text) return '';
+          return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong class="text-slate-900 font-semibold">$1</strong>')
+            .replace(/`(.*?)`/g, '<code class="bg-slate-100 text-slate-800 px-1 py-0.5 rounded font-mono text-xs">$1</code>')
+            .replace(/↑/g, '<span class="text-rose-600 font-bold">↑</span>')
+            .replace(/↓/g, '<span class="text-blue-600 font-bold">↓</span>');
+        }
+      };
+    }
+  </script>
+</body>
+</html>

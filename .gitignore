@@ -1,0 +1,83 @@
+# ==============================================================================
+# MedKeep - 严格个人隐私与医疗档案保护规则 (Privacy & Medical Records Guard)
+# 警告：任何真实就医单据、影像图片、结构化数据均不得提交至公共代码仓库！
+# ==============================================================================
+
+# 1. 真实医疗单据与扫描图片 (All Real Medical Receipts, Scans, & PDFs)
+records/*
+!records/.gitkeep
+!records/demo/
+!records/demo/**
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
+*.heif
+*.pdf
+*.tiff
+*.bmp
+!records/demo/**/*.jpg
+!records/demo/**/*.jpeg
+!records/demo/**/*.png
+# 允许 viewer / UI 静态图标资源 (若有)
+!viewer/assets/**
+!viewer/*.svg
+!viewer/*.png
+
+# 2. 真实医疗结构化数据 (Real Medical Records JSONL & Markdown Archives)
+*.jsonl
+data/*.jsonl
+!data/*.template.jsonl
+!data/*.sample.jsonl
+data/*-episodes.json
+data/*-conditions.json
+*.bak
+*病历*.md
+*档案*.md
+*报告*.md
+!docs/**
+
+# 3. 私有配置文件 (Private Configuration with real names/credentials)
+config/medkeep.json
+!config/medkeep.template.json
+*.local.json
+.env
+.env.*
+
+# 4. 临时归档、收件箱与草稿 (Scratch, Inbox, and Temporary Staging)
+scratch/
+tmp/
+temp/
+inbox/
+_inbox/
+.inbox/
+.legacy/
+
+# 5. Python 运行时输出 (Python Runtime Outputs)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+
+# 6. 操作系统与编辑器临时文件 (OS & Editor Cache)
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace

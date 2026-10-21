@@ -1,0 +1,15 @@
+{
+  "storage": {
+    "mode": "local",
+    "local_records_dir": "./records"
+  },
+  "members": [
+    {
+      "id": "demo",
+      "name": "示例成员",
+      "gender": "男",
+      "birth_year": 1990,
+      "conditions": ["健康随访"]
+    }
+  ]
+}
