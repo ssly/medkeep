@@ -208,6 +208,12 @@ def build_episodes(person, records, observations=None):
                 "title": f"{top_meta['name']}门诊病历底纸",
                 "reason": "未见门诊就诊病历底纸，系统依据辅助单据自动归拢归档。"
             }]
+            for r in non_visits:
+                for m in (r.get("missing_items") or []):
+                    missing_items.append(m)
+
+            inferred_records = [r for r in non_visits if r.get("agent_inference")]
+            unconfirmed_count = sum(1 for r in inferred_records if not r.get("manual_confirmed", False))
 
             title = f"{first.get('document_title', '专科检查检验')}（{diag}）" if diag and diag not in first.get('document_title', '') else first.get('document_title', '门诊化验/检查')
 
@@ -230,6 +236,8 @@ def build_episodes(person, records, observations=None):
                 "all_nas_files": all_nas,
                 "promoted_observations": linked_obs,
                 "missing_items": missing_items,
+                "inferred_records": inferred_records,
+                "unconfirmed_count": unconfirmed_count,
                 "topic_code": top_meta["code"]
             }
             episodes.append(ep)
@@ -259,6 +267,15 @@ def build_episodes(person, records, observations=None):
                 )
             ]
 
+            missing_items = list(v.get("missing_items") or [])
+            for r in non_visits:
+                for m in (r.get("missing_items") or []):
+                    missing_items.append(m)
+
+            ep_records = [v] + non_visits
+            inferred_records = [r for r in ep_records if r.get("agent_inference")]
+            unconfirmed_count = sum(1 for r in inferred_records if not r.get("manual_confirmed", False))
+
             title = f"{v.get('document_title', '门诊病历')}（{diag}）" if diag and diag not in v.get('document_title', '') else v.get('document_title', '门诊病历')
 
             ep = {
@@ -279,7 +296,9 @@ def build_episodes(person, records, observations=None):
                 "attached_items": non_visits,
                 "all_nas_files": all_nas,
                 "promoted_observations": linked_obs,
-                "missing_items": [],
+                "missing_items": missing_items,
+                "inferred_records": inferred_records,
+                "unconfirmed_count": unconfirmed_count,
                 "topic_code": top_meta["code"]
             }
             episodes.append(ep)
@@ -316,6 +335,15 @@ def build_episodes(person, records, observations=None):
                     )
                 ]
 
+                missing_items = list(v.get("missing_items") or [])
+                for r in matched_non_visits:
+                    for m in (r.get("missing_items") or []):
+                        missing_items.append(m)
+
+                ep_records = [v] + matched_non_visits
+                inferred_records = [r for r in ep_records if r.get("agent_inference")]
+                unconfirmed_count = sum(1 for r in inferred_records if not r.get("manual_confirmed", False))
+
                 title = f"{v.get('document_title', '门诊病历')}（{diag}）" if diag and diag not in v.get('document_title', '') else v.get('document_title', '门诊病历')
 
                 ep = {
@@ -336,7 +364,9 @@ def build_episodes(person, records, observations=None):
                     "attached_items": matched_non_visits,
                     "all_nas_files": all_nas,
                     "promoted_observations": linked_obs,
-                    "missing_items": [],
+                    "missing_items": missing_items,
+                    "inferred_records": inferred_records,
+                    "unconfirmed_count": unconfirmed_count,
                     "topic_code": v_meta["code"]
                 }
                 episodes.append(ep)
@@ -373,9 +403,15 @@ def build_conditions(person, records, observations=None):
 
         all_nas = []
         rec_count = 0
+        unconfirmed_count = 0
+        inferred_count = 0
+        missing_count = 0
         for e in eps:
             rec_count += (1 if e.get('primary_visit') else 0) + len(e.get('attached_items', []))
             all_nas.extend(e.get('all_nas_files', []))
+            unconfirmed_count += e.get('unconfirmed_count', 0)
+            inferred_count += len(e.get('inferred_records', []))
+            missing_count += len(e.get('missing_items', []))
 
         latest_diag = eps[0].get('diagnosis', '日常专科随访')
         theme = meta.get("theme", "blue")
@@ -394,6 +430,9 @@ def build_conditions(person, records, observations=None):
             'date_span': f'{earliest} ~ {latest}' if earliest != latest else latest,
             'total_episodes': len(eps),
             'total_records': rec_count,
+            'unconfirmed_count': unconfirmed_count,
+            'inferred_count': inferred_count,
+            'missing_count': missing_count,
             'all_nas_files': all_nas,
             'episodes': eps
         })
@@ -503,6 +542,71 @@ class MedKeepHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(json.dumps({"success": True, "members": cfg["members"]}, ensure_ascii=False).encode("utf-8"))
+            return
+
+        if path == "/api/records/confirm":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_len)
+            try:
+                data = json.loads(body.decode("utf-8"))
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode("utf-8"))
+                return
+
+            person_id = data.get("person", "").strip()
+            record_id = data.get("record_id", "").strip()
+            if not person_id or not record_id:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "person 与 record_id 不能为空"}, ensure_ascii=False).encode("utf-8"))
+                return
+
+            jsonl_file = os.path.join(DATA_DIR, f"{person_id}-medical-records.jsonl")
+            if not os.path.exists(jsonl_file) and person_id == "demo":
+                jsonl_file = os.path.join(DATA_DIR, "records.sample.jsonl")
+
+            if not os.path.exists(jsonl_file):
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "未找到成员病历数据文件"}, ensure_ascii=False).encode("utf-8"))
+                return
+
+            records = []
+            updated_record = None
+            with open(jsonl_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    rec = json.loads(line)
+                    if rec.get("record_id") == record_id:
+                        if "manual_confirmed" in data:
+                            rec["manual_confirmed"] = bool(data["manual_confirmed"])
+                        if "agent_inference" in data and data["agent_inference"] is not None:
+                            rec["agent_inference"] = str(data["agent_inference"]).strip()
+                        updated_record = rec
+                    records.append(rec)
+
+            if updated_record is None:
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"未找到记录 {record_id}"}, ensure_ascii=False).encode("utf-8"))
+                return
+
+            with open(jsonl_file, "w", encoding="utf-8") as f:
+                for rec in records:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "record": updated_record}, ensure_ascii=False).encode("utf-8"))
             return
 
         self.send_response(404)
@@ -619,7 +723,8 @@ class MedKeepHandler(SimpleHTTPRequestHandler):
                     "latest_date": latest_date,
                     "conditions": m.get("conditions", []),
                     "observations_count": len(obs),
-                    "promoted_obs_count": len([o for o in obs if o.get("promoted_to_clinical_context")])
+                    "promoted_obs_count": len([o for o in obs if o.get("promoted_to_clinical_context")]),
+                    "unconfirmed_count": len([r for r in recs if r.get("agent_inference") and not r.get("manual_confirmed", False)])
                 }
 
             self.send_response(200)

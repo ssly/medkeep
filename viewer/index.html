@@ -125,6 +125,9 @@
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-bold text-slate-900 text-base" x-text="cond.title"></span>
                 <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200" x-text="cond.status"></span>
+                <span x-show="cond.unconfirmed_count > 0" class="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-300" x-text="`🤖 待人工确认 ${cond.unconfirmed_count} 项`"></span>
+                <span x-show="cond.unconfirmed_count === 0 && cond.inferred_count > 0" class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" x-text="`✓ 推断已确认 (${cond.inferred_count})`"></span>
+                <span x-show="cond.missing_count > 0" class="px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200" x-text="`缺 ${cond.missing_count} 份单据`"></span>
                 <span class="text-xs text-slate-400 font-mono" x-text="`最新: ${cond.latest_date}`"></span>
                 <span class="text-xs text-slate-400 font-mono" x-text="`(${cond.total_episodes} 次就诊 · ${cond.total_records} 份单据)`"></span>
               </div>
@@ -153,6 +156,8 @@
                     <span class="font-semibold text-slate-800" x-text="ep.title"></span>
                     <span x-show="ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-100 font-medium">门诊主条目</span>
                     <span x-show="!ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-semibold">无病历</span>
+                    <span x-show="ep.unconfirmed_count > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold">🤖 含待确认推断</span>
+                    <span x-show="ep.unconfirmed_count === 0 && ep.inferred_records?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">✓ 推断已人工确认</span>
                     <span x-show="ep.missing_items?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-medium" x-text="`缺 ${ep.missing_items.length} 份单据`"></span>
                   </div>
                   <div class="text-slate-400 font-mono text-[11px]" x-text="`${ep.hospital} · ${ep.department} · ${ep.doctor}`"></div>
@@ -191,6 +196,51 @@
                         <span class="font-mono text-[10px] text-slate-400" x-text="`[${item.date}]`"></span>
                       </div>
                       <div x-show="item.findings_and_metrics && item.findings_and_metrics !== '无。'" class="font-mono text-slate-600 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(item.findings_and_metrics)"></div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- AGENT 推断意见与人工确认区 -->
+                <div x-show="ep.inferred_records?.length > 0" class="space-y-1.5 pt-1">
+                  <template x-for="infRec in ep.inferred_records" :key="infRec.record_id">
+                    <div :class="infRec.manual_confirmed ? 'bg-emerald-50/60 border-emerald-200' : 'bg-amber-50/80 border-amber-300'" class="p-2.5 rounded-lg border space-y-2">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center space-x-1.5">
+                          <span :class="infRec.manual_confirmed ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-200/80 text-amber-900 border-amber-400'" class="px-1.5 py-0.5 rounded text-[10px] font-bold border" x-text="infRec.manual_confirmed ? '✓ 人工已确认 (manual_confirmed: true)' : '🤖 待人工确认 (manual_confirmed: false)'"></span>
+                          <span class="font-mono text-[11px] text-slate-500" x-text="`#${infRec.record_id}`"></span>
+                        </div>
+                        <div class="flex items-center space-x-1.5">
+                          <button 
+                            x-show="!isEditingInference(infRec.record_id)"
+                            @click.stop="startEditInference(infRec)"
+                            class="px-2 py-0.5 rounded text-[11px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors">
+                            编辑备注
+                          </button>
+                          <button 
+                            x-show="!infRec.manual_confirmed"
+                            @click.stop="confirmRecordInference(infRec, true)"
+                            class="px-2.5 py-0.5 rounded text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors">
+                            ✓ 确认无误
+                          </button>
+                          <button 
+                            x-show="infRec.manual_confirmed"
+                            @click.stop="confirmRecordInference(infRec, false)"
+                            class="px-2 py-0.5 rounded text-[11px] bg-white hover:bg-amber-50 text-amber-700 border border-amber-200 transition-colors">
+                            设为待确认
+                          </button>
+                        </div>
+                      </div>
+                      <div x-show="!isEditingInference(infRec.record_id)" class="text-slate-700 leading-relaxed whitespace-pre-wrap text-[11px]" x-html="formatMarkdown(infRec.agent_inference)"></div>
+                      <div x-show="isEditingInference(infRec.record_id)" class="space-y-1.5" @click.stop>
+                        <textarea 
+                          x-model="editingInferenceText[infRec.record_id]"
+                          rows="2"
+                          class="w-full p-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-slate-500"></textarea>
+                        <div class="flex justify-end space-x-1.5">
+                          <button @click.stop="cancelEditInference(infRec.record_id)" class="px-2 py-1 rounded text-[11px] bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">取消</button>
+                          <button @click.stop="saveEditInference(infRec, true)" class="px-2.5 py-1 rounded text-[11px] bg-slate-900 text-white hover:bg-slate-800 font-medium">保存并确认</button>
+                        </div>
+                      </div>
                     </div>
                   </template>
                 </div>
@@ -254,6 +304,8 @@
                 
                 <span x-show="ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-100 font-medium">门诊主条目</span>
                 <span x-show="!ep.has_formal_visit" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-semibold">无病历</span>
+                <span x-show="ep.unconfirmed_count > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold">🤖 含待确认推断</span>
+                <span x-show="ep.unconfirmed_count === 0 && ep.inferred_records?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">✓ 推断已人工确认</span>
                 <span x-show="ep.attached_items?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-100 font-medium" x-text="`关联 ${ep.attached_items.length} 份报告`"></span>
                 <span x-show="ep.missing_items?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-medium" x-text="`缺 ${ep.missing_items.length} 份单据`"></span>
                 <span x-show="ep.promoted_observations?.length > 0" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-medium" x-text="`附自查 ${ep.promoted_observations.length} 条`"></span>
@@ -348,6 +400,54 @@
               </div>
             </div>
 
+            <!-- AGENT 推断意见与人工确认区 (Episodes 视图) -->
+            <div x-show="ep.inferred_records?.length > 0" class="space-y-2">
+              <div class="font-bold text-slate-900 text-xs flex items-center justify-between">
+                <span>🤖 AGENT 推断意见与人工复核（共 <span class="font-mono" x-text="ep.inferred_records.length"></span> 项）：</span>
+              </div>
+              <template x-for="infRec in ep.inferred_records" :key="infRec.record_id">
+                <div :class="infRec.manual_confirmed ? 'bg-emerald-50/60 border-emerald-200' : 'bg-amber-50/80 border-amber-300'" class="p-3 rounded-lg border space-y-2 text-xs">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center space-x-2">
+                      <span :class="infRec.manual_confirmed ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-200/80 text-amber-900 border-amber-400'" class="px-2 py-0.5 rounded text-[10px] font-bold border" x-text="infRec.manual_confirmed ? '✓ 人工已确认 (manual_confirmed: true)' : '🤖 待人工确认 (manual_confirmed: false)'"></span>
+                      <span class="font-mono text-slate-500" x-text="`#${infRec.record_id} · ${infRec.document_title}`"></span>
+                    </div>
+                    <div class="flex items-center space-x-1.5">
+                      <button 
+                        x-show="!isEditingInference(infRec.record_id)"
+                        @click.stop="startEditInference(infRec)"
+                        class="px-2.5 py-1 rounded text-[11px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors">
+                        编辑备注
+                      </button>
+                      <button 
+                        x-show="!infRec.manual_confirmed"
+                        @click.stop="confirmRecordInference(infRec, true)"
+                        class="px-3 py-1 rounded text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors">
+                        ✓ 确认无误
+                      </button>
+                      <button 
+                        x-show="infRec.manual_confirmed"
+                        @click.stop="confirmRecordInference(infRec, false)"
+                        class="px-2.5 py-1 rounded text-[11px] bg-white hover:bg-amber-50 text-amber-700 border border-amber-200 transition-colors">
+                        设为待确认
+                      </button>
+                    </div>
+                  </div>
+                  <div x-show="!isEditingInference(infRec.record_id)" class="text-slate-700 leading-relaxed whitespace-pre-wrap" x-html="formatMarkdown(infRec.agent_inference)"></div>
+                  <div x-show="isEditingInference(infRec.record_id)" class="space-y-2" @click.stop>
+                    <textarea 
+                      x-model="editingInferenceText[infRec.record_id]"
+                      rows="2"
+                      class="w-full p-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-slate-500"></textarea>
+                    <div class="flex justify-end space-x-2">
+                      <button @click.stop="cancelEditInference(infRec.record_id)" class="px-2.5 py-1 rounded text-xs bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">取消</button>
+                      <button @click.stop="saveEditInference(infRec, true)" class="px-3 py-1 rounded text-xs bg-slate-900 text-white hover:bg-slate-800 font-medium">保存并确认</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+
             <!-- 缺失单据排查 -->
             <div x-show="ep.missing_items?.length > 0" class="space-y-2">
               <div class="font-bold text-rose-800 text-xs flex items-center justify-between">
@@ -420,10 +520,12 @@
         <div class="bg-white border border-slate-200 rounded-xl p-3.5 hover:border-slate-300 transition-colors text-xs space-y-2">
           <div class="flex items-start justify-between">
             <div class="space-y-1">
-              <div class="flex items-center space-x-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="font-mono font-bold text-slate-900" x-text="record.date"></span>
                 <span :class="getTypeBadge(record.category).tagClass" class="px-1.5 py-0.2 rounded text-[10px] font-medium" x-text="getTypeBadge(record.category).label"></span>
                 <span class="font-mono text-slate-400" x-text="`#${record.record_id}`"></span>
+                <span x-show="record.agent_inference && !record.manual_confirmed" class="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold">🤖 待人工确认</span>
+                <span x-show="record.agent_inference && record.manual_confirmed" class="px-1.5 py-0.2 rounded text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">✓ 推断已人工确认</span>
               </div>
               <div class="font-semibold text-slate-900 text-sm" x-text="cleanDiagnosis(record.diagnosis) || record.document_title"></div>
               <div class="text-slate-500 font-mono text-[11px]" x-text="`${record.hospital_dept_doctor} · ${record.document_title}`"></div>
@@ -440,6 +542,44 @@
 
           <div x-show="record.findings_and_metrics && record.findings_and_metrics !== '无。'" class="bg-slate-50 p-2 rounded border border-slate-100 font-mono text-slate-700 whitespace-pre-wrap leading-relaxed" x-html="formatMarkdown(record.findings_and_metrics)"></div>
           <div x-show="record.treatment_and_plan && record.treatment_and_plan !== '无。'" class="bg-slate-50 p-2 rounded border border-slate-100 text-slate-700 leading-relaxed" x-html="formatMarkdown(record.treatment_and_plan)"></div>
+
+          <!-- AGENT 推断意见与人工确认 (全部单据视图) -->
+          <div x-show="record.agent_inference" :class="record.manual_confirmed ? 'bg-emerald-50/60 border-emerald-200' : 'bg-amber-50/80 border-amber-300'" class="p-2.5 rounded-lg border space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span :class="record.manual_confirmed ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-amber-200/80 text-amber-900 border-amber-400'" class="px-1.5 py-0.5 rounded text-[10px] font-bold border" x-text="record.manual_confirmed ? '✓ 人工已确认 (manual_confirmed: true)' : '🤖 待人工确认 (manual_confirmed: false)'"></span>
+              <div class="flex items-center space-x-1.5">
+                <button 
+                  x-show="!isEditingInference(record.record_id)"
+                  @click.stop="startEditInference(record)"
+                  class="px-2 py-0.5 rounded text-[11px] bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors">
+                  编辑备注
+                </button>
+                <button 
+                  x-show="!record.manual_confirmed"
+                  @click.stop="confirmRecordInference(record, true)"
+                  class="px-2.5 py-0.5 rounded text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors">
+                  ✓ 确认无误
+                </button>
+                <button 
+                  x-show="record.manual_confirmed"
+                  @click.stop="confirmRecordInference(record, false)"
+                  class="px-2 py-0.5 rounded text-[11px] bg-white hover:bg-amber-50 text-amber-700 border border-amber-200 transition-colors">
+                  设为待确认
+                </button>
+              </div>
+            </div>
+            <div x-show="!isEditingInference(record.record_id)" class="text-slate-700 leading-relaxed whitespace-pre-wrap text-[11px]" x-html="formatMarkdown(record.agent_inference)"></div>
+            <div x-show="isEditingInference(record.record_id)" class="space-y-1.5" @click.stop>
+              <textarea 
+                x-model="editingInferenceText[record.record_id]"
+                rows="2"
+                class="w-full p-2 text-xs bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-slate-500"></textarea>
+              <div class="flex justify-end space-x-1.5">
+                <button @click.stop="cancelEditInference(record.record_id)" class="px-2 py-1 rounded text-[11px] bg-white border border-slate-200 text-slate-600 hover:bg-slate-50">取消</button>
+                <button @click.stop="saveEditInference(record, true)" class="px-2.5 py-1 rounded text-[11px] bg-slate-900 text-white hover:bg-slate-800 font-medium">保存并确认</button>
+              </div>
+            </div>
+          </div>
         </div>
       </template>
     </div>
@@ -557,6 +697,8 @@
         memberModalError: '',
         memberEditList: [],
         newMember: { id: '', name: '' },
+        editingInference: {},
+        editingInferenceText: {},
 
         async init() {
           await this.loadSummary();
@@ -790,6 +932,55 @@
             return `${this.nasBaseUrl}/raw${filePath}`;
           }
           return filePath;
+        },
+
+        isEditingInference(recordId) {
+          return !!this.editingInference[recordId];
+        },
+
+        startEditInference(rec) {
+          this.editingInferenceText[rec.record_id] = rec.agent_inference || 'AGENT：推断意见——';
+          this.editingInference[rec.record_id] = true;
+        },
+
+        cancelEditInference(recordId) {
+          this.editingInference[recordId] = false;
+        },
+
+        async saveEditInference(rec, confirmedState = true) {
+          const newText = (this.editingInferenceText[rec.record_id] || '').trim();
+          await this.confirmRecordInference(rec, confirmedState, newText);
+          this.editingInference[rec.record_id] = false;
+        },
+
+        async confirmRecordInference(rec, confirmedState, updatedText = null) {
+          const prevConfirmed = dict => dict;
+          const savedConditions = { ...this.expandedConditions };
+          const savedCards = { ...this.expandedCards };
+          try {
+            const payload = {
+              person: rec.person || this.currentPerson,
+              record_id: rec.record_id,
+              manual_confirmed: confirmedState
+            };
+            if (updatedText !== null) {
+              payload.agent_inference = updatedText;
+            }
+            const res = await fetch('/api/records/confirm', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.success) {
+              await this.loadSummary();
+              await this.loadData();
+              this.expandedConditions = savedConditions;
+              this.expandedCards = savedCards;
+            }
+          } catch (e) {
+            console.error('更新人工确认状态失败:', e);
+          }
         },
 
         formatMarkdown(text) {
