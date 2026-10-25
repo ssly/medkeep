@@ -37,11 +37,106 @@ CATEGORY_MAPPING = {
     "cv": {"code": "cv", "name": "心血管科", "title": "心血管专科诊疗", "icon": "🫀", "theme": "rose"},
     "ortho": {"code": "ortho", "name": "骨科门诊", "title": "骨科与关节肌肉诊疗", "icon": "🦴", "theme": "slate"},
     "tcm": {"code": "tcm", "name": "中医调理", "title": "中医辨证调理", "icon": "🌱", "theme": "amber"},
-    "rheum": {"code": "rheum", "name": "风湿免疫", "title": "风湿免疫专科诊疗", "icon": "🩺", "theme": "indigo"},
+    "rheum": {"code": "rheum", "name": "风湿免疫", "title": "风湿免疫专科（类风湿关节炎）", "icon": "🩺", "theme": "indigo"},
     "checkup": {"code": "checkup", "name": "健康体检", "title": "健康体检与综合评估", "icon": "🩺", "theme": "indigo"},
     "ped": {"code": "ped", "name": "儿科门诊", "title": "儿童保健与儿科诊疗", "icon": "👶", "theme": "pink"},
+    "obgyn": {"code": "obgyn", "name": "妇产专科", "title": "妇产科专科诊疗与产后随访", "icon": "🌸", "theme": "rose"},
     "eye": {"code": "eye", "name": "眼科门诊", "title": "眼科专科诊疗", "icon": "👁️", "theme": "teal"},
     "general": {"code": "general", "name": "全科综合", "title": "全科综合诊疗", "icon": "📋", "theme": "slate"},
+}
+
+# 系统内置通用专科别名（全面兜底，防止外部配置缺失）
+DEFAULT_TOPIC_ALIASES = {
+    # 风湿免疫与类风湿关节炎
+    "ra": "rheum",
+    "rheum": "rheum",
+    "immune": "rheum",
+    "rheumatoid": "rheum",
+    "rheumatism": "rheum",
+    "rf": "rheum",
+    "rf-crp": "rheum",
+    "rf-liver-renal": "rheum",
+    "esr": "rheum",
+    "hypothyroidism": "rheum",
+    # 呼吸系统
+    "lung": "resp",
+    "chest": "resp",
+    "asthma": "resp",
+    "feno": "resp",
+    "pft": "resp",
+    "bronchial-provocation": "resp",
+    "uri-asthma": "resp",
+    "fever-uri": "resp",
+    "flu-rna": "resp",
+    "neck-chest-ct": "resp",
+    "chest-xray": "resp",
+    "bloodgas-electrolytes": "resp",
+    "acute-laryngotracheitis": "resp",
+    # 消化系统
+    "abdomen": "gi",
+    "us-abdomen": "gi",
+    "abdominal-pain": "gi",
+    "amylase": "gi",
+    "gallstones": "gi",
+    "anemia-gallstones": "gi",
+    "breast-gallstones": "gi",
+    "infant-crying": "gi",
+    "excessive-crying": "gi",
+    # 皮肤科
+    "skin": "derm",
+    "dermoscopy": "derm",
+    "tinea-pedis": "derm",
+    "fungal-smear": "derm",
+    "eczema": "derm",
+    "keloid": "derm",
+    "hyperpigmentation": "derm",
+    # 妇产专科
+    "prenatal": "obgyn",
+    "postpartum-bleeding": "obgyn",
+    "prom": "obgyn",
+    "aub": "obgyn",
+    "vaginitis": "obgyn",
+    "gyn": "obgyn",
+    # 儿科保健
+    "ped": "ped",
+    "g6pd": "ped",
+    "g6pd-screening": "ped",
+    "g6pd-activity": "ped",
+    "g6pd-quant-ratio": "ped",
+    "hip-screening": "ped",
+    "biochemistry-newborn": "ped",
+    "cbc-newborn": "ped",
+    "cbc-hscrp-newborn": "ped",
+    "cmv-dna": "ped",
+    "blood-culture-aerobic": "ped",
+    "blood-culture-anaerobic": "ped",
+    "blood-type-abo-rh": "ped",
+    "thyroid-function": "ped",
+    "thyroid-7items": "ped",
+    # 耳鼻咽喉
+    "ear": "ent",
+    "ear-hormone": "ent",
+    "sudden-hearing-loss": "ent",
+    "sudden-hearing-loss-followup": "ent",
+    "audiometry": "ent",
+    "dpoae": "ent",
+    "tympanometry": "ent",
+    # 心血管
+    "heart": "cv",
+    # 中医
+    "tcm": "tcm",
+    "prescription": "tcm",
+    "insomnia": "tcm",
+    # 健康体检
+    "report": "checkup",
+    "ai-mdt": "checkup",
+    "checkup": "checkup",
+    "ped-checkup": "checkup",
+    "ped-growth": "checkup",
+    "ddst-development": "checkup",
+    # 眼科
+    "eye": "eye",
+    "vision-screener": "eye",
 }
 
 THEME_TAG_MAP = {
@@ -59,7 +154,9 @@ THEME_TAG_MAP = {
 def normalize_topic(raw_topic, raw_category=""):
     t = (raw_topic or "").lower().strip()
     c = (raw_category or "").lower().strip()
-    aliases = get_config().get("topic_aliases", {})
+    cfg_aliases = get_config().get("topic_aliases", {})
+    aliases = {**DEFAULT_TOPIC_ALIASES, **cfg_aliases}
+
     if t in aliases and aliases[t] in CATEGORY_MAPPING:
         return CATEGORY_MAPPING[aliases[t]]
     if c in aliases and aliases[c] in CATEGORY_MAPPING:
@@ -74,6 +171,19 @@ def normalize_topic(raw_topic, raw_category=""):
     for k, v in CATEGORY_MAPPING.items():
         if k in t or k in c:
             return v
+
+    # 中文语义与诊断关键词兜底映射
+    if any(k in t or k in c for k in ["类风湿", "风湿", "关节炎", "ra", "免疫", "抗ccp", "rf"]):
+        return CATEGORY_MAPPING["rheum"]
+    if any(k in t or k in c for k in ["妇科", "产科", "早孕", "妊娠", "产后", "阴道", "obgyn"]):
+        return CATEGORY_MAPPING["obgyn"]
+    if any(k in t or k in c for k in ["皮肤", "皮炎", "湿疹", "雀斑", "瘢痕", "derm"]):
+        return CATEGORY_MAPPING["derm"]
+    if any(k in t or k in c for k in ["胃", "肠", "腹痛", "胆囊", "消化", "gi"]):
+        return CATEGORY_MAPPING["gi"]
+    if any(k in t or k in c for k in ["中医", "方回春堂", "草药", "中药", "tcm"]):
+        return CATEGORY_MAPPING["tcm"]
+
     return {"code": "general", "name": "综合门诊", "title": "综合门诊与辅助检查", "icon": "📋", "theme": "slate"}
 
 def parse_hosp_dept_doctor(h_str):
